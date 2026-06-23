@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>二维码详情 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container">
+    <a href="/dashboard.html" class="muted" style="font-size:14px">← 返回控制台</a>
+    <div class="msg" id="msg" style="margin-top:14px"></div>
+
+    <div class="grid grid-2" id="content" style="margin-top:14px; align-items:start; display:none">
+      <div class="card qr-preview">
+        <img id="qrImg" width="240" height="240" alt="二维码" />
+        <a class="btn" id="download" download="qrcode.png">下载二维码 PNG</a>
+        <div class="muted" style="font-size:12px; text-align:center">扫码即记录一次访问</div>
+      </div>
+
+      <div class="card">
+        <h1 class="page-title" id="title" style="margin-bottom:14px"></h1>
+
+        <label>目标链接</label>
+        <div class="row spread" style="gap:8px">
+          <a id="target" href="#" target="_blank" style="word-break:break-all"></a>
+        </div>
+
+        <label style="margin-top:16px">追踪短链（二维码实际编码内容）</label>
+        <div class="row" style="gap:8px">
+          <input id="redirect" readonly />
+          <button class="btn ghost sm" id="copyBtn">复制</button>
+        </div>
+
+        <div class="grid grid-2" style="margin-top:22px">
+          <div>
+            <div class="stat-num" id="scanCount">0</div>
+            <div class="stat-label">累计扫码</div>
+          </div>
+          <div>
+            <div class="stat-num" id="created" style="font-size:15px; font-weight:600"></div>
+            <div class="stat-label">创建时间</div>
+          </div>
+        </div>
+
+        <div class="row" style="gap:10px; margin-top:24px">
+          <a class="btn" id="statsLink">查看统计</a>
+          <a class="btn ghost" id="editLink">编辑链接</a>
+          <button class="btn danger" id="deleteBtn">删除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      await renderNav();
+      if (!(await requireAuth())) return;
+      const id = qs('id');
+      const msg = document.getElementById('msg');
+      if (!id) { showMsg(msg, '缺少二维码 ID', 'err'); return; }
+      try {
+        const q = await api('/api/qrcodes/' + id);
+        document.getElementById('content').style.display = '';
+        document.getElementById('title').textContent = q.title;
+        const target = document.getElementById('target');
+        target.textContent = q.target; target.href = q.target;
+        document.getElementById('redirect').value = q.redirectUrl;
+        document.getElementById('scanCount').textContent = q.scanCount;
+        document.getElementById('created').textContent = fmtDate(q.createdAt);
+        const img = document.getElementById('qrImg');
+        img.src = '/api/qrcodes/' + id + '/image';
+        document.getElementById('download').href = '/api/qrcodes/' + id + '/image';
+        document.getElementById('statsLink').href = '/stats.html?id=' + id;
+        document.getElementById('editLink').href = '/edit.html?id=' + id;
+
+        document.getElementById('copyBtn').addEventListener('click', () => {
+          navigator.clipboard.writeText(q.redirectUrl);
+          showMsg(msg, '已复制追踪链接', 'ok');
+        });
+        document.getElementById('deleteBtn').addEventListener('click', async () => {
+          if (!confirm('确定删除该二维码？其扫码记录也会一并删除。')) return;
+          await api('/api/qrcodes/' + id, { method: 'DELETE' });
+          location.href = '/dashboard.html';
+        });
+      } catch (err) {
+        showMsg(msg, err.message, 'err');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>表单 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container">
+    <div class="row spread">
+      <div>
+        <h1 class="page-title">收集表单</h1>
+        <p class="page-sub">自定义要收集的信息，生成二维码，扫码即可填写并统计</p>
+      </div>
+      <a class="btn" href="/form-builder.html">+ 创建表单</a>
+    </div>
+
+    <div class="msg" id="msg"></div>
+    <div class="grid" id="list"></div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      await renderNav('forms');
+      if (!(await requireAuth())) return;
+      const list = document.getElementById('list');
+      try {
+        const items = await api('/api/forms');
+        if (!items.length) {
+          list.innerHTML = `<div class="card empty">
+            还没有表单。<br/><br/>
+            <a class="btn" href="/form-builder.html">+ 创建第一个表单</a>
+          </div>`;
+          return;
+        }
+        list.innerHTML = items.map((f) => `
+          <div class="qr-item">
+            <img class="qr-thumb" src="/api/forms/${f.id}/image" alt="QR" />
+            <div style="flex:1; min-width:0">
+              <h3>${escapeHtml(f.title)}</h3>
+              <div class="url">${escapeHtml(f.description || '（无描述）')}</div>
+              <div class="muted" style="font-size:12px; margin-top:4px">
+                ${f.fieldCount} 个字段 · 已收集 <strong>${f.submissionCount}</strong> 份 · ${fmtDate(f.createdAt)}
+              </div>
+            </div>
+            <div class="row">
+              <a class="btn ghost sm" href="/form-detail.html?id=${f.id}">二维码</a>
+              <a class="btn ghost sm" href="/form-submissions.html?id=${f.id}">收集结果</a>
+              <a class="btn ghost sm" href="/form-builder.html?id=${f.id}">编辑</a>
+            </div>
+          </div>`).join('');
+      } catch (err) {
+        showMsg(document.getElementById('msg'), err.message, 'err');
+      }
+    })();
+  </script>
+</body>
+</html>

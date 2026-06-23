@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>填写表单 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body class="fill" data-theme="classic">
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="/"><span class="dot">▦</span> Smart QR Manager</a>
+    </div>
+  </header>
+
+  <div class="fill-wrap">
+    <div class="msg" id="msg"></div>
+    <div class="card" id="card">
+      <img id="logo" class="fill-logo" style="display:none" alt="logo" />
+      <h1 class="page-title" id="title" style="text-align:center"></h1>
+      <p class="muted" id="desc" style="text-align:center; margin-top:0"></p>
+      <form id="form"></form>
+      <button class="btn block" id="submitBtn" style="margin-top:18px">提交</button>
+    </div>
+
+    <div class="card empty" id="done" style="display:none">
+      <div style="font-size:40px">✓</div>
+      <h2>提交成功</h2>
+      <p class="muted">感谢你的填写！</p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    const id = location.pathname.split('/').filter(Boolean).pop();
+    let fields = [];
+
+    function fieldHtml(f) {
+      const req = f.required ? '<span style="color:var(--red)">*</span>' : '';
+      let control = '';
+      if (f.type === 'textarea') {
+        control = `<textarea rows="3" data-fid="${f.id}"></textarea>`;
+      } else if (f.type === 'select') {
+        control = `<select data-fid="${f.id}"><option value="">请选择…</option>${
+          (f.options || []).map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('')
+        }</select>`;
+      } else if (f.type === 'radio') {
+        control = (f.options || []).map((o) =>
+          `<label class="chk" style="display:flex; margin:6px 0"><input type="radio" name="${f.id}" value="${escapeHtml(o)}"/> ${escapeHtml(o)}</label>`
+        ).join('');
+      } else if (f.type === 'checkbox') {
+        control = (f.options || []).map((o) =>
+          `<label class="chk" style="display:flex; margin:6px 0"><input type="checkbox" data-cb="${f.id}" value="${escapeHtml(o)}"/> ${escapeHtml(o)}</label>`
+        ).join('');
+      } else {
+        const t = ['email', 'tel', 'number', 'date'].includes(f.type) ? f.type : 'text';
+        control = `<input type="${t}" data-fid="${f.id}" />`;
+      }
+      return `<div style="margin-bottom:6px"><label>${escapeHtml(f.label)} ${req}</label>${control}</div>`;
+    }
+
+    function collect() {
+      const data = {};
+      for (const f of fields) {
+        if (f.type === 'checkbox') {
+          data[f.id] = [...document.querySelectorAll(`[data-cb="${f.id}"]:checked`)].map((el) => el.value);
+        } else if (f.type === 'radio') {
+          const el = document.querySelector(`input[name="${f.id}"]:checked`);
+          data[f.id] = el ? el.value : '';
+        } else {
+          const el = document.querySelector(`[data-fid="${f.id}"]`);
+          data[f.id] = el ? el.value.trim() : '';
+        }
+      }
+      return data;
+    }
+
+    (async () => {
+      const msg = document.getElementById('msg');
+      let form;
+      try { form = await api('/api/public/forms/' + id); }
+      catch (err) {
+        document.getElementById('card').style.display = 'none';
+        showMsg(msg, err.message, 'err');
+        return;
+      }
+      fields = form.fields || [];
+      if (form.theme) document.body.setAttribute('data-theme', form.theme);
+      document.title = form.title + ' — 填写表单';
+      document.getElementById('title').textContent = form.title;
+      const desc = document.getElementById('desc');
+      if (form.description) desc.textContent = form.description; else desc.style.display = 'none';
+      if (form.logo) { const l = document.getElementById('logo'); l.src = form.logo; l.style.display = 'block'; }
+      document.getElementById('form').innerHTML = fields.map(fieldHtml).join('');
+
+      const btn = document.getElementById('submitBtn');
+      btn.addEventListener('click', async () => {
+        const data = collect();
+        // client-side required check
+        for (const f of fields) {
+          const v = data[f.id];
+          const empty = f.type === 'checkbox' ? !v.length : !v;
+          if (f.required && empty) { showMsg(msg, `「${f.label}」为必填项`, 'err'); return; }
+        }
+        btn.disabled = true;
+        try {
+          await api('/api/public/forms/' + id + '/submit', {
+            method: 'POST', body: JSON.stringify({ data }),
+          });
+          document.getElementById('card').style.display = 'none';
+          document.getElementById('done').style.display = 'block';
+          msg.className = 'msg';
+        } catch (err) { showMsg(msg, err.message, 'err'); btn.disabled = false; }
+      });
+    })();
+  </script>
+</body>
+</html>

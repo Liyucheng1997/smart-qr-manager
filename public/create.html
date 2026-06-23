@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>创建二维码 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container narrow">
+    <h1 class="page-title">创建二维码</h1>
+    <p class="page-sub">填写标题和目标链接，生成可统计的动态二维码</p>
+
+    <div class="card">
+      <div class="msg" id="msg"></div>
+
+      <label for="title">标题</label>
+      <input id="title" placeholder="例如：产品官网、活动落地页" />
+
+      <label for="target">目标链接</label>
+      <input id="target" placeholder="https://example.com" />
+      <p class="muted" style="font-size:12px; margin:6px 0 0">
+        扫码后将跳转到该链接，且每次扫描都会被记录。链接以后可随时修改。
+      </p>
+
+      <button class="btn block" id="submitBtn" style="margin-top:20px">创建</button>
+      <a class="btn ghost block" href="/dashboard.html" style="margin-top:10px">取消</a>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      await renderNav('create');
+      if (!(await requireAuth())) return;
+      const msg = document.getElementById('msg');
+      const btn = document.getElementById('submitBtn');
+      btn.addEventListener('click', async () => {
+        const title = document.getElementById('title').value.trim();
+        const target = document.getElementById('target').value.trim();
+        if (!title || !target) { showMsg(msg, '标题和目标链接都要填写', 'err'); return; }
+        btn.disabled = true;
+        try {
+          const qr = await api('/api/qrcodes', {
+            method: 'POST',
+            body: JSON.stringify({ title, target }),
+          });
+          location.href = '/detail.html?id=' + qr.id;
+        } catch (err) {
+          showMsg(msg, err.message, 'err');
+          btn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

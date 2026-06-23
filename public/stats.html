@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>扫码统计 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container">
+    <a href="#" id="back" class="muted" style="font-size:14px">← 返回详情</a>
+    <h1 class="page-title" style="margin-top:14px" id="title">扫码统计</h1>
+    <div class="msg" id="msg"></div>
+
+    <div id="content" style="display:none">
+      <div class="grid grid-3">
+        <div class="card"><div class="stat-num" id="total">0</div><div class="stat-label">累计扫码次数</div></div>
+        <div class="card"><div class="stat-num" id="today">0</div><div class="stat-label">今日扫码</div></div>
+        <div class="card"><div class="stat-num" id="last" style="font-size:15px;font-weight:600">—</div><div class="stat-label">最近一次扫码</div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px; align-items:start">
+        <div class="card">
+          <h3 style="margin-top:0">最近 14 天趋势</h3>
+          <canvas id="trendChart" height="220"></canvas>
+        </div>
+        <div class="card">
+          <h3 style="margin-top:0">设备类型分布</h3>
+          <canvas id="deviceChart" height="220"></canvas>
+          <div class="muted" id="deviceEmpty" style="text-align:center; padding:30px 0; display:none">
+            暂无扫码数据
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/app.js"></script>
+  <script>
+    (async () => {
+      await renderNav();
+      if (!(await requireAuth())) return;
+      const id = qs('id');
+      const msg = document.getElementById('msg');
+      document.getElementById('back').href = '/detail.html?id=' + id;
+      if (!id) { showMsg(msg, '缺少二维码 ID', 'err'); return; }
+
+      let s;
+      try { s = await api('/api/qrcodes/' + id + '/stats'); }
+      catch (err) { showMsg(msg, err.message, 'err'); return; }
+
+      document.getElementById('content').style.display = '';
+      document.getElementById('title').textContent = '扫码统计 · ' + s.title;
+      document.getElementById('total').textContent = s.total;
+      document.getElementById('today').textContent = s.today;
+      document.getElementById('last').textContent = fmtDate(s.lastScan);
+
+      // Trend line
+      new Chart(document.getElementById('trendChart'), {
+        type: 'line',
+        data: {
+          labels: s.trend.map((t) => t.date.slice(5)),
+          datasets: [{
+            label: '扫码次数',
+            data: s.trend.map((t) => t.count),
+            borderColor: '#4f46e5',
+            backgroundColor: 'rgba(79,70,229,0.12)',
+            fill: true, tension: 0.3, pointRadius: 3,
+          }],
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+        },
+      });
+
+      // Device doughnut
+      const dv = s.devices;
+      const dvTotal = dv.mobile + dv.tablet + dv.desktop;
+      if (dvTotal === 0) {
+        document.getElementById('deviceChart').style.display = 'none';
+        document.getElementById('deviceEmpty').style.display = 'block';
+      } else {
+        new Chart(document.getElementById('deviceChart'), {
+          type: 'doughnut',
+          data: {
+            labels: ['手机', '平板', '电脑'],
+            datasets: [{
+              data: [dv.mobile, dv.tablet, dv.desktop],
+              backgroundColor: ['#4f46e5', '#818cf8', '#c7d2fe'],
+            }],
+          },
+          options: { plugins: { legend: { position: 'bottom' } } },
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart QR Manager — 智能二维码管理</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <section class="hero">
+    <h1>让每一个二维码<br /><span class="grad">都可被追踪与管理</span></h1>
+    <p>Smart QR Manager 帮你生成二维码、统一管理、随时修改跳转链接，并实时统计扫码次数、日期趋势与设备类型。</p>
+    <div class="hero-cta">
+      <a class="btn" href="/login.html">免费开始 →</a>
+      <a class="btn ghost" href="#quick">快速生成二维码</a>
+    </div>
+  </section>
+
+  <div class="container">
+    <div class="grid grid-3">
+      <div class="card">
+        <span class="tag">动态链接</span>
+        <h3>随时改跳转</h3>
+        <p class="muted">二维码印好后也能修改目标链接，无需重新打印。</p>
+      </div>
+      <div class="card">
+        <span class="tag">扫码统计</span>
+        <h3>看清每次扫描</h3>
+        <p class="muted">记录扫码次数、按天的趋势曲线和访客设备类型。</p>
+      </div>
+      <div class="card">
+        <span class="tag">集中管理</span>
+        <h3>一个控制台</h3>
+        <p class="muted">所有二维码集中在控制台，创建、查看、编辑一目了然。</p>
+      </div>
+    </div>
+
+    <div class="card" id="quick" style="margin-top:28px">
+      <h2 style="margin-top:0">快速生成二维码</h2>
+      <p class="muted">输入任意链接或文本，立即生成（此处为静态二维码，登录后可创建可统计的动态二维码）。</p>
+      <div class="grid grid-2" style="align-items:start">
+        <div>
+          <label for="quickInput">链接或文本</label>
+          <input id="quickInput" placeholder="https://example.com" value="https://anthropic.com" />
+          <button class="btn block" id="quickBtn" style="margin-top:14px">生成二维码</button>
+        </div>
+        <div class="qr-preview">
+          <img id="quickImg" width="220" height="220" alt="二维码预览" />
+          <a class="btn ghost sm" id="quickDownload" href="#" download="qrcode.png">下载 PNG</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    renderNav('home');
+    const input = document.getElementById('quickInput');
+    const img = document.getElementById('quickImg');
+    const dl = document.getElementById('quickDownload');
+    function gen() {
+      const text = input.value.trim();
+      if (!text) return;
+      const url = '/api/quick?text=' + encodeURIComponent(text);
+      img.src = url;
+      dl.href = url;
+    }
+    document.getElementById('quickBtn').addEventListener('click', gen);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') gen(); });
+    gen();
+  </script>
+</body>
+</html>

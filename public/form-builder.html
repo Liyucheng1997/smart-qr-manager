@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>设计表单 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container narrow">
+    <a href="/forms.html" class="muted" style="font-size:14px">← 返回表单列表</a>
+    <h1 class="page-title" id="pageTitle" style="margin-top:14px">创建表单</h1>
+    <p class="page-sub">自定义要收集的信息，例如活动报名的姓名、电话、人数等</p>
+
+    <div class="card">
+      <div class="msg" id="msg"></div>
+
+      <label for="title">表单标题</label>
+      <input id="title" placeholder="例如：周末读书会报名" />
+
+      <label for="desc">表单说明（可选）</label>
+      <textarea id="desc" rows="2" placeholder="给填写者的一段说明文字"></textarea>
+
+      <label style="margin-top:20px">收集字段</label>
+      <div id="fields"></div>
+
+      <div class="row" style="gap:10px; margin-top:6px">
+        <button class="btn ghost sm" id="addField">+ 添加字段</button>
+        <button class="btn ghost sm" id="addPreset">+ 常用：姓名/电话</button>
+      </div>
+
+      <label style="margin-top:22px">表单风格</label>
+      <p class="muted" style="font-size:12px; margin:0 0 10px">选择填写页的视觉风格，适配不同场景</p>
+      <div class="theme-grid" id="themeGrid"></div>
+
+      <button class="btn block" id="saveBtn" style="margin-top:22px">保存表单</button>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    const TYPES = [
+      ['text', '单行文本'], ['textarea', '多行文本'], ['email', '邮箱'],
+      ['tel', '电话'], ['number', '数字'], ['date', '日期'],
+      ['select', '下拉选择'], ['radio', '单选'], ['checkbox', '多选'],
+    ];
+    let fields = [];
+    const editId = qs('id');
+
+    const THEMES = [
+      { id: 'classic', name: '简约', scene: '通用 / 默认' },
+      { id: 'business', name: '商务', scene: '会议 / 报名' },
+      { id: 'elegant', name: '优雅', scene: '婚礼 / 时装 / 艺术' },
+      { id: 'vibrant', name: '活力', scene: '派对 / 活动 / 促销' },
+      { id: 'nature', name: '自然', scene: '教育 / 户外 / 公益' },
+      { id: 'dark', name: '暗夜', scene: '科技 / 游戏' },
+    ];
+    let theme = 'classic';
+
+    function renderThemes() {
+      const grid = document.getElementById('themeGrid');
+      grid.innerHTML = THEMES.map((t) => `
+        <div class="theme-opt ${t.id === theme ? 'sel' : ''}" data-theme="${t.id}">
+          <div class="sw sw-${t.id}"></div>
+          <div class="nm">${t.name}</div>
+          <div class="sc">${t.scene}</div>
+        </div>`).join('');
+      grid.querySelectorAll('.theme-opt').forEach((el) =>
+        el.addEventListener('click', () => { theme = el.dataset.theme; renderThemes(); }));
+    }
+
+    function uid() { return 'f' + Math.random().toString(36).slice(2, 8); }
+    function hasOptions(t) { return ['select', 'radio', 'checkbox'].includes(t); }
+
+    function render() {
+      const wrap = document.getElementById('fields');
+      if (!fields.length) {
+        wrap.innerHTML = '<p class="muted" style="font-size:13px">还没有字段，点下方按钮添加。</p>';
+        return;
+      }
+      wrap.innerHTML = fields.map((f, i) => `
+        <div class="field-card" data-i="${i}">
+          <div class="field-head">
+            <div class="grow">
+              <label>字段名称</label>
+              <input class="f-label" value="${escapeHtml(f.label)}" placeholder="例如：姓名" />
+            </div>
+            <div style="width:140px">
+              <label>类型</label>
+              <select class="f-type">
+                ${TYPES.map(([v, t]) => `<option value="${v}" ${f.type === v ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          ${hasOptions(f.type) ? `
+          <div class="field-opts">
+            <label>选项（每行一个）</label>
+            <textarea class="f-options" rows="3" placeholder="选项一&#10;选项二">${escapeHtml((f.options || []).join('\n'))}</textarea>
+          </div>` : ''}
+          <div class="field-foot">
+            <label class="chk"><input type="checkbox" class="f-required" ${f.required ? 'checked' : ''}/> 必填</label>
+            <div class="row" style="gap:6px">
+              <button class="btn ghost sm f-up" ${i === 0 ? 'disabled' : ''}>↑</button>
+              <button class="btn ghost sm f-down" ${i === fields.length - 1 ? 'disabled' : ''}>↓</button>
+              <button class="btn danger sm f-del">删除</button>
+            </div>
+          </div>
+        </div>`).join('');
+
+      // wire events
+      wrap.querySelectorAll('.field-card').forEach((card) => {
+        const i = +card.dataset.i;
+        card.querySelector('.f-label').addEventListener('input', (e) => { fields[i].label = e.target.value; });
+        card.querySelector('.f-type').addEventListener('change', (e) => {
+          fields[i].type = e.target.value;
+          if (hasOptions(e.target.value) && !fields[i].options) fields[i].options = ['选项一', '选项二'];
+          render();
+        });
+        card.querySelector('.f-required').addEventListener('change', (e) => { fields[i].required = e.target.checked; });
+        const opts = card.querySelector('.f-options');
+        if (opts) opts.addEventListener('input', (e) => {
+          fields[i].options = e.target.value.split('\n').map((s) => s.trim()).filter(Boolean);
+        });
+        card.querySelector('.f-del').addEventListener('click', () => { fields.splice(i, 1); render(); });
+        card.querySelector('.f-up').addEventListener('click', () => { [fields[i - 1], fields[i]] = [fields[i], fields[i - 1]]; render(); });
+        card.querySelector('.f-down').addEventListener('click', () => { [fields[i + 1], fields[i]] = [fields[i], fields[i + 1]]; render(); });
+      });
+    }
+
+    function addField(preset) {
+      fields.push(preset || { id: uid(), label: '', type: 'text', required: false });
+      render();
+    }
+
+    document.getElementById('addField').addEventListener('click', () => addField());
+    document.getElementById('addPreset').addEventListener('click', () => {
+      fields.push({ id: uid(), label: '姓名', type: 'text', required: true });
+      fields.push({ id: uid(), label: '手机号', type: 'tel', required: true });
+      render();
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const title = document.getElementById('title').value.trim();
+      const description = document.getElementById('desc').value.trim();
+      const msg = document.getElementById('msg');
+      if (!title) { showMsg(msg, '请填写表单标题', 'err'); return; }
+      const clean = fields.filter((f) => f.label.trim());
+      if (!clean.length) { showMsg(msg, '请至少添加一个有名称的字段', 'err'); return; }
+      const btn = document.getElementById('saveBtn');
+      btn.disabled = true;
+      try {
+        const body = JSON.stringify({ title, description, fields: clean, theme });
+        const res = editId
+          ? await api('/api/forms/' + editId, { method: 'PUT', body })
+          : await api('/api/forms', { method: 'POST', body });
+        location.href = '/form-detail.html?id=' + res.id;
+      } catch (err) { showMsg(msg, err.message, 'err'); btn.disabled = false; }
+    });
+
+    (async () => {
+      await renderNav('forms');
+      if (!(await requireAuth())) return;
+      if (editId) {
+        document.getElementById('pageTitle').textContent = '编辑表单';
+        try {
+          const f = await api('/api/forms/' + editId);
+          document.getElementById('title').value = f.title;
+          document.getElementById('desc').value = f.description || '';
+          fields = (f.fields || []).map((x) => ({ ...x }));
+          theme = f.theme || 'classic';
+        } catch (err) { showMsg(document.getElementById('msg'), err.message, 'err'); }
+      }
+      render();
+      renderThemes();
+    })();
+  </script>
+</body>
+</html>
