@@ -1,0 +1,16 @@
+[Unit]
+Description=Smart QR Manager
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=/etc/smart-qr.env
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=3
+# 重启/部署时保留 data 目录，数据持久化在磁盘上
+
+[Install]
+WantedBy=multi-user.target

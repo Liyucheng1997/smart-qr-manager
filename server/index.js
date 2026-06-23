@@ -11,8 +11,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'smart-qr-dev-secret-change-me';
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const isProd = process.env.NODE_ENV === 'production';
+
+if (isProd && JWT_SECRET === 'smart-qr-dev-secret-change-me') {
+  console.warn('[警告] 生产环境未设置 JWT_SECRET，请在环境变量中配置一个随机密钥！');
+}
+
+// Cookie options — secure flag enabled in production (served over HTTPS)
+const COOKIE_OPTS = { httpOnly: true, sameSite: 'lax', secure: isProd, maxAge: 7 * 24 * 60 * 60 * 1000 };
 
 const app = express();
+app.set('trust proxy', 1); // behind Nginx/Cloudflare — trust X-Forwarded-* headers
 app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
 
@@ -85,7 +94,7 @@ app.post('/api/auth/register', async (req, res) => {
     createdAt: Date.now(),
   };
   db.createUser(user);
-  res.cookie('token', signToken(user), { httpOnly: true, sameSite: 'lax' });
+  res.cookie('token', signToken(user), COOKIE_OPTS);
   res.json({ id: user.id, name: user.name, email: user.email });
 });
 
@@ -94,12 +103,12 @@ app.post('/api/auth/login', async (req, res) => {
   const user = db.findUserByEmail(email || '');
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash)))
     return res.status(401).json({ error: '邮箱或密码错误' });
-  res.cookie('token', signToken(user), { httpOnly: true, sameSite: 'lax' });
+  res.cookie('token', signToken(user), COOKIE_OPTS);
   res.json({ id: user.id, name: user.name, email: user.email });
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  res.clearCookie('token');
+  res.clearCookie('token', { httpOnly: true, sameSite: 'lax', secure: isProd });
   res.json({ ok: true });
 });
 

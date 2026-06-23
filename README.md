@@ -50,7 +50,7 @@ npm start          # 访问 http://localhost:3000
 
 - **同一 WiFi**：用局域网 IP 启动，例如 `BASE_URL=http://192.168.1.10:3000 npm start`
 - **公网临时隧道**：运行 `./start-public.ps1`（基于 Cloudflare Tunnel，自动获取公网网址并以该地址启动服务）。适合演示/短期活动，地址重启会变。
-- **永久部署**：部署到 Render / Railway / 云服务器，使用固定域名。
+- **永久部署**：部署到云服务器并绑定自有域名 + HTTPS，见 [deploy/DEPLOY.md](deploy/DEPLOY.md)（含 Oracle Cloud 永久免费方案与一键脚本）。
 
 ## 页面
 | 页面 | 路径 | 说明 |
