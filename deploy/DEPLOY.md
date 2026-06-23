@@ -9,9 +9,12 @@
 ---
 
 ## 第 1 步：买域名并准备 DNS
-1. 在 Cloudflare Registrar 或 Porkbun 注册你的 `.com` 域名。
-2. 推荐把域名 DNS 托管到 **Cloudflare**（免费）：注册后按提示把域名的 Nameserver 改成 Cloudflare 给的两条。
-   （第 4 步拿到服务器 IP 后再来添加 A 记录。）
+任选一家注册商：
+- **国外**：Cloudflare Registrar 或 Porkbun（按成本价、便宜）。可把 DNS 托管到 Cloudflare（免费）。
+- **阿里云**：注册 `.com` 后**务必完成「域名实名认证」**（国内注册商硬性要求，否则数天后会被暂停解析）。
+  本项目部署在**境外** Oracle 服务器，**无需 ICP 备案**。第 4 步直接用阿里云「云解析 DNS」添加 A 记录即可。
+
+（第 4 步拿到服务器 IP 后再来添加 A 记录。）
 
 ## 第 2 步：开通 Oracle Cloud 永久免费云主机
 1. 注册 https://www.oracle.com/cloud/free/ （需一张信用卡做验证，不会扣费；选 Always Free 资源不收费）。
@@ -28,9 +31,10 @@
 - Source CIDR `0.0.0.0/0`，IP Protocol **TCP**，Destination Port **443**
 
 ## 第 4 步：把域名指向服务器
-回到 Cloudflare DNS，添加记录（先**关闭橙色云朵/仅 DNS**，等证书签发成功后再视需要开启代理）：
-- 类型 `A`，名称 `@`，内容 = 第 2 步的 Public IP
-- 类型 `A`，名称 `www`，内容 = 同一 IP（可选）
+在你的 DNS 管理处添加 A 记录，内容填第 2 步的 Public IP：
+
+- **阿里云云解析**：域名 → 解析设置 → 添加记录：类型 `A`，主机记录 `@`，记录值 = Public IP；再加一条主机记录 `www`（可选）。
+- **Cloudflare**：类型 `A`，名称 `@`（和 `www`），内容 = Public IP；先设为**仅 DNS（关闭橙色云朵）**，等证书签发成功后再视需要开启代理。
 
 等几分钟让 DNS 生效（可用 `ping your-domain.com` 验证返回的是服务器 IP）。
 
