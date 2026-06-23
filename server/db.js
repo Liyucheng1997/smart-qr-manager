@@ -1,48 +1,5 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-const BACKUP_FILE = path.join(DATA_DIR, 'db.backup.json');
-
-const DEFAULT_DATA = { users: [], qrcodes: [], scans: [], forms: [], submissions: [] };
-
-function ensureFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(DB_FILE)) {
-    // if a backup exists, restore from it instead of starting empty
-    if (fs.existsSync(BACKUP_FILE)) {
-      try { fs.copyFileSync(BACKUP_FILE, DB_FILE); return; } catch { /* fall through */ }
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(DEFAULT_DATA, null, 2));
-  }
-}
-
-function read() {
-  ensureFile();
-  try {
-    const raw = fs.readFileSync(DB_FILE, 'utf-8');
-    return { ...DEFAULT_DATA, ...JSON.parse(raw) };
-  } catch {
-    // main file unreadable — try the backup before giving up
-    try {
-      const raw = fs.readFileSync(BACKUP_FILE, 'utf-8');
-      return { ...DEFAULT_DATA, ...JSON.parse(raw) };
-    } catch {
-      return { ...DEFAULT_DATA };
-    }
-  }
-}
-
-function write(data) {
-  ensureFile();
-  const json = JSON.stringify(data, null, 2);
-  fs.writeFileSync(DB_FILE, json);
-  // keep a safety copy that survives accidental deletion of the main file
-  try { fs.writeFileSync(BACKUP_FILE, json); } catch { /* best effort */ }
-}
+// Data access layer — async, backed by server/store.js (file or Redis).
+import { load, save } from './store.js';
 
 // Generate a short, URL-safe id
 export function genId(len = 8) {
@@ -53,104 +10,103 @@ export function genId(len = 8) {
 }
 
 export const db = {
-  read,
-  write,
-
   // ---- Users ----
-  findUserByEmail(email) {
-    return read().users.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
+  async findUserByEmail(email) {
+    const d = await load();
+    return d.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
   },
-  findUserById(id) {
-    return read().users.find((u) => u.id === id);
+  async findUserById(id) {
+    const d = await load();
+    return d.users.find((u) => u.id === id);
   },
-  createUser(user) {
-    const data = read();
-    data.users.push(user);
-    write(data);
+  async createUser(user) {
+    const d = await load();
+    d.users.push(user);
+    await save(d);
     return user;
   },
 
   // ---- QR codes ----
-  listQrcodes(userId) {
-    return read()
-      .qrcodes.filter((q) => q.userId === userId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  async listQrcodes(userId) {
+    const d = await load();
+    return d.qrcodes.filter((q) => q.userId === userId).sort((a, b) => b.createdAt - a.createdAt);
   },
-  getQrcode(id) {
-    return read().qrcodes.find((q) => q.id === id);
+  async getQrcode(id) {
+    const d = await load();
+    return d.qrcodes.find((q) => q.id === id);
   },
-  createQrcode(qr) {
-    const data = read();
-    data.qrcodes.push(qr);
-    write(data);
+  async createQrcode(qr) {
+    const d = await load();
+    d.qrcodes.push(qr);
+    await save(d);
     return qr;
   },
-  updateQrcode(id, patch) {
-    const data = read();
-    const idx = data.qrcodes.findIndex((q) => q.id === id);
+  async updateQrcode(id, patch) {
+    const d = await load();
+    const idx = d.qrcodes.findIndex((q) => q.id === id);
     if (idx === -1) return null;
-    data.qrcodes[idx] = { ...data.qrcodes[idx], ...patch };
-    write(data);
-    return data.qrcodes[idx];
+    d.qrcodes[idx] = { ...d.qrcodes[idx], ...patch };
+    await save(d);
+    return d.qrcodes[idx];
   },
-  deleteQrcode(id) {
-    const data = read();
-    data.qrcodes = data.qrcodes.filter((q) => q.id !== id);
-    data.scans = data.scans.filter((s) => s.qrId !== id);
-    write(data);
+  async deleteQrcode(id) {
+    const d = await load();
+    d.qrcodes = d.qrcodes.filter((q) => q.id !== id);
+    d.scans = d.scans.filter((s) => s.qrId !== id);
+    await save(d);
   },
 
   // ---- Scans ----
-  addScan(scan) {
-    const data = read();
-    data.scans.push(scan);
-    write(data);
+  async addScan(scan) {
+    const d = await load();
+    d.scans.push(scan);
+    await save(d);
     return scan;
   },
-  scansFor(qrId) {
-    return read().scans.filter((s) => s.qrId === qrId);
+  async scansFor(qrId) {
+    const d = await load();
+    return d.scans.filter((s) => s.qrId === qrId);
   },
 
   // ---- Forms ----
-  listForms(userId) {
-    return read()
-      .forms.filter((f) => f.userId === userId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+  async listForms(userId) {
+    const d = await load();
+    return d.forms.filter((f) => f.userId === userId).sort((a, b) => b.createdAt - a.createdAt);
   },
-  getForm(id) {
-    return read().forms.find((f) => f.id === id);
+  async getForm(id) {
+    const d = await load();
+    return d.forms.find((f) => f.id === id);
   },
-  createForm(form) {
-    const data = read();
-    data.forms.push(form);
-    write(data);
+  async createForm(form) {
+    const d = await load();
+    d.forms.push(form);
+    await save(d);
     return form;
   },
-  updateForm(id, patch) {
-    const data = read();
-    const idx = data.forms.findIndex((f) => f.id === id);
+  async updateForm(id, patch) {
+    const d = await load();
+    const idx = d.forms.findIndex((f) => f.id === id);
     if (idx === -1) return null;
-    data.forms[idx] = { ...data.forms[idx], ...patch };
-    write(data);
-    return data.forms[idx];
+    d.forms[idx] = { ...d.forms[idx], ...patch };
+    await save(d);
+    return d.forms[idx];
   },
-  deleteForm(id) {
-    const data = read();
-    data.forms = data.forms.filter((f) => f.id !== id);
-    data.submissions = data.submissions.filter((s) => s.formId !== id);
-    write(data);
+  async deleteForm(id) {
+    const d = await load();
+    d.forms = d.forms.filter((f) => f.id !== id);
+    d.submissions = d.submissions.filter((s) => s.formId !== id);
+    await save(d);
   },
 
   // ---- Submissions ----
-  addSubmission(sub) {
-    const data = read();
-    data.submissions.push(sub);
-    write(data);
+  async addSubmission(sub) {
+    const d = await load();
+    d.submissions.push(sub);
+    await save(d);
     return sub;
   },
-  submissionsFor(formId) {
-    return read()
-      .submissions.filter((s) => s.formId === formId)
-      .sort((a, b) => b.at - a.at);
+  async submissionsFor(formId) {
+    const d = await load();
+    return d.submissions.filter((s) => s.formId === formId).sort((a, b) => b.at - a.at);
   },
 };

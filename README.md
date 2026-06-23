@@ -27,7 +27,7 @@
 
 ## 技术栈
 - 后端：Node.js + Express
-- 存储：本地 JSON 文件（零额外依赖）
+- 存储：双后端——本地 JSON 文件（开发/自有服务器）或 Upstash Redis（Serverless/Vercel），按环境变量自动切换
 - 认证：bcryptjs + JWT
 - 二维码：`qrcode`（服务端生成 PNG），首页快速生成 + 中心 Logo（客户端 canvas 合成）
 - 前端：原生 HTML/CSS/JS + Chart.js（统计图表）
@@ -50,7 +50,8 @@ npm start          # 访问 http://localhost:3000
 
 - **同一 WiFi**：用局域网 IP 启动，例如 `BASE_URL=http://192.168.1.10:3000 npm start`
 - **公网临时隧道**：运行 `./start-public.ps1`（基于 Cloudflare Tunnel，自动获取公网网址并以该地址启动服务）。适合演示/短期活动，地址重启会变。
-- **永久部署**：部署到云服务器并绑定自有域名 + HTTPS，见 [deploy/DEPLOY.md](deploy/DEPLOY.md)（含 Oracle Cloud 永久免费方案与一键脚本）。
+- **永久部署（免费）**：部署到 Vercel + Upstash Redis，见 [deploy/VERCEL.md](deploy/VERCEL.md)（免信用卡，自动 HTTPS，可绑定自有域名）。
+- **永久部署（自有服务器）**：部署到云服务器并绑定域名 + HTTPS，见 [deploy/DEPLOY.md](deploy/DEPLOY.md)（含 Oracle Cloud 永久免费方案与一键脚本）。
 
 ## 页面
 | 页面 | 路径 | 说明 |
