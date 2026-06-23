@@ -1,0 +1,4 @@
+# 在 Linux 服务器上运行的脚本/配置强制 LF 换行，避免 CRLF 导致执行失败
+*.sh            text eol=lf
+deploy/*.service text eol=lf
+deploy/*.conf    text eol=lf
