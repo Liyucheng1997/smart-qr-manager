@@ -156,12 +156,18 @@
           ? await api('/api/forms/' + editId, { method: 'PUT', body })
           : await api('/api/forms', { method: 'POST', body });
         location.href = '/form-detail.html?id=' + res.id;
-      } catch (err) { showMsg(msg, err.message, 'err'); btn.disabled = false; }
+      } catch (err) {
+        if (/会员/.test(err.message)) { location.href = '/upgrade.html'; return; }
+        showMsg(msg, err.message, 'err'); btn.disabled = false;
+      }
     });
 
     (async () => {
       await renderNav('forms');
-      if (!(await requireAuth())) return;
+      const me = await requireAuth();
+      if (!me) return;
+      // 付费闸门：非会员创建新表单时引导去开通
+      if (!editId && !me.isMember) { location.href = '/upgrade.html'; return; }
       if (editId) {
         document.getElementById('pageTitle').textContent = '编辑表单';
         try {

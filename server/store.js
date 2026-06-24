@@ -12,7 +12,7 @@ const DB_FILE = path.join(DATA_DIR, 'db.json');
 const BACKUP_FILE = path.join(DATA_DIR, 'db.backup.json');
 const REDIS_KEY = process.env.REDIS_KEY || 'smartqr:db';
 
-export const DEFAULT_DATA = { users: [], qrcodes: [], scans: [], forms: [], submissions: [] };
+export const DEFAULT_DATA = { users: [], qrcodes: [], scans: [], forms: [], submissions: [], orders: [] };
 
 const useRedis = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
 export const backend = useRedis ? 'redis' : 'file';

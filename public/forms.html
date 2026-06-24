@@ -15,7 +15,7 @@
         <h1 class="page-title">收集表单</h1>
         <p class="page-sub">自定义要收集的信息，生成二维码，扫码即可填写并统计</p>
       </div>
-      <a class="btn" href="/form-builder.html">+ 创建表单</a>
+      <a class="btn" id="createBtn" href="/form-builder.html">+ 创建表单</a>
     </div>
 
     <div class="msg" id="msg"></div>
@@ -26,7 +26,10 @@
   <script>
     (async () => {
       await renderNav('forms');
-      if (!(await requireAuth())) return;
+      const me = await requireAuth();
+      if (!me) return;
+      // 非会员：创建按钮引导到开通页
+      if (!me.isMember) document.getElementById('createBtn').href = '/upgrade.html';
       const list = document.getElementById('list');
       try {
         const items = await api('/api/forms');

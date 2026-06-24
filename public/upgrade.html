@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>开通会员 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .price { font-size:44px; font-weight:800; color:var(--brand,#6366f1); }
+    .price small { font-size:18px; font-weight:600; }
+    .perks { list-style:none; padding:0; margin:16px 0; }
+    .perks li { padding:6px 0; }
+    .perks li::before { content:"✓ "; color:#16a34a; font-weight:800; }
+    .qr-row { display:flex; gap:18px; justify-content:center; flex-wrap:wrap; margin:18px 0 6px; }
+    .qr-card { text-align:center; }
+    .qr-card img { width:200px; height:200px; object-fit:contain; border:1px solid var(--border,#e2e8f0); border-radius:12px; padding:8px; background:#fff; }
+    .qr-card .lab { margin-top:6px; font-weight:700; }
+    .pay-tip { color:var(--muted,#94a3b8); font-size:13px; margin-top:8px; }
+    .ok-banner { background:#dcfce7; color:#166534; border-radius:12px; padding:18px; text-align:center; font-weight:700; }
+    .pending-banner { background:#fef9c3; color:#854d0e; border-radius:12px; padding:18px; text-align:center; font-weight:700; }
+  </style>
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container narrow">
+    <h1 class="page-title">开通永久会员</h1>
+    <p class="page-sub">会员可无限创建收集表单；二维码功能始终免费</p>
+    <div class="msg" id="msg"></div>
+
+    <div class="card" id="card" style="display:none">
+      <!-- 购买视图 -->
+      <div id="buyView">
+        <div class="price">¥<span id="price">9.90</span> <small>/ 永久</small></div>
+        <ul class="perks">
+          <li>无限创建自定义收集表单</li>
+          <li>6 种表单风格 + 自定义 Logo</li>
+          <li>扫码填写、实时统计、CSV 导出</li>
+          <li>一次付费，永久有效</li>
+        </ul>
+
+        <div class="qr-row">
+          <div class="qr-card" id="wxCard">
+            <img src="/pay-wechat.png" alt="微信收款码" onerror="this.closest('.qr-card').style.display='none'" />
+            <div class="lab">微信</div>
+          </div>
+          <div class="qr-card" id="aliCard">
+            <img src="/pay-alipay.png" alt="支付宝收款码" onerror="this.closest('.qr-card').style.display='none'" />
+            <div class="lab">支付宝</div>
+          </div>
+        </div>
+        <p class="pay-tip" style="text-align:center">用微信或支付宝扫码支付 ¥<span id="price2">9.90</span>，付款后点下方按钮申请开通</p>
+
+        <button class="btn block" id="paidBtn" style="margin-top:14px">我已支付，申请开通</button>
+        <p class="pay-tip" style="text-align:center" id="manualNote">管理员确认到账后即为你开通（一般很快）</p>
+      </div>
+
+      <!-- 已申请、等待确认 -->
+      <div id="pendingView" style="display:none">
+        <div class="pending-banner">⏳ 已提交开通申请，等待管理员确认到账…</div>
+        <p class="pay-tip" style="text-align:center">确认后本页会自动刷新为会员，无需操作。</p>
+      </div>
+
+      <!-- 已是会员 -->
+      <div id="okView" style="display:none">
+        <div class="ok-banner">🎉 你已是会员，可以无限创建表单啦！</div>
+        <a class="btn block" href="/form-builder.html" style="margin-top:16px">去创建表单</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    let pollTimer = null;
+
+    (async () => {
+      await renderNav('forms');
+      if (!(await requireAuth())) return;
+      const msg = document.getElementById('msg');
+      let cfg;
+      try { cfg = await api('/api/billing/config'); }
+      catch (err) { showMsg(msg, err.message, 'err'); return; }
+
+      document.getElementById('card').style.display = '';
+      document.getElementById('price').textContent = cfg.price;
+      document.getElementById('price2').textContent = cfg.price;
+
+      if (cfg.isMember) { showView('okView'); return; }
+      if (cfg.hasPendingRequest) { showPending(); return; }
+
+      document.getElementById('paidBtn').addEventListener('click', submitPaidRequest);
+    })();
+
+    function showView(id) {
+      ['buyView', 'pendingView', 'okView'].forEach((v) => {
+        document.getElementById(v).style.display = v === id ? '' : 'none';
+      });
+    }
+
+    function showPending() {
+      showView('pendingView');
+      // 每 4 秒查一次，管理员确认后自动变会员
+      if (!pollTimer) pollTimer = setInterval(checkMember, 4000);
+    }
+
+    async function submitPaidRequest() {
+      const btn = document.getElementById('paidBtn');
+      btn.disabled = true; btn.textContent = '提交中…';
+      try {
+        await api('/api/billing/request', { method: 'POST' });
+        showPending();
+      } catch (err) {
+        if (/已经是会员/.test(err.message)) { showView('okView'); return; }
+        showMsg(document.getElementById('msg'), err.message, 'err');
+        btn.disabled = false; btn.textContent = '我已支付，申请开通';
+      }
+    }
+
+    async function checkMember() {
+      try {
+        const cfg = await api('/api/billing/config');
+        if (cfg.isMember) {
+          if (pollTimer) clearInterval(pollTimer);
+          showView('okView');
+        }
+      } catch { /* 下次再查 */ }
+    }
+  </script>
+</body>
+</html>

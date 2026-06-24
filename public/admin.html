@@ -21,6 +21,8 @@
     .sub-table th, .sub-table td { border:1px solid var(--border,#e2e8f0); padding:5px 8px; text-align:left; vertical-align:top; }
     .sub-table th { background:rgba(99,102,241,.08); }
     .badge-admin { font-size:11px; background:#6366f1; color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; }
+    .badge-paid { font-size:11px; background:#16a34a; color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; }
+    .badge-pending { font-size:11px; background:#f59e0b; color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; }
     .caret { transition:transform .15s; color:var(--muted,#94a3b8); }
     .caret.open { transform:rotate(90deg); }
   </style>
@@ -78,7 +80,7 @@
           <div class="admin-user-head" onclick="toggleUser('${u.id}')">
             <span class="caret" id="caret-${u.id}">▶</span>
             <div class="who">
-              <div class="nm">${escapeHtml(u.name)}${u.isAdmin ? '<span class="badge-admin">管理员</span>' : ''}</div>
+              <div class="nm">${escapeHtml(u.name)}${u.isAdmin ? '<span class="badge-admin">管理员</span>' : ''}${u.isPaid ? '<span class="badge-paid">会员</span>' : ''}${u.pendingRequest && !u.isPaid ? '<span class="badge-pending">待开通</span>' : ''}</div>
               <div class="muted" style="font-size:12px">${escapeHtml(u.email)} · 注册于 ${fmtDate(u.createdAt)}</div>
             </div>
             <div class="counts">
@@ -87,6 +89,7 @@
               <span>表单 <b>${u.formCount}</b></span>
               <span>收集 <b>${u.totalSubmissions}</b></span>
             </div>
+            ${u.isAdmin ? '' : `<button class="btn ghost sm" onclick="event.stopPropagation();toggleMember('${u.id}',${u.isPaid})">${u.isPaid ? '取消会员' : '设为会员'}</button>`}
             <button class="btn ghost sm" onclick="event.stopPropagation();delUser('${u.id}','${escapeHtml(u.name).replace(/'/g, "\\'")}',${u.isAdmin})">删除</button>
           </div>
           <div class="admin-detail" id="detail-${u.id}" style="display:none"></div>
@@ -151,6 +154,15 @@
       }).join('');
       return `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted,#94a3b8)">展开 ${f.submissions.length} 条提交</summary>
         <table class="sub-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></details>`;
+    }
+
+    async function toggleMember(id, isPaid) {
+      const turnOn = !isPaid;
+      if (!confirm(turnOn ? '确定将该用户设为会员？（用于线下/手动开通）' : '确定取消该用户的会员资格？')) return;
+      try {
+        await api('/api/admin/users/' + id + '/membership', { method: 'POST', body: JSON.stringify({ isPaid: turnOn }) });
+        reload();
+      } catch (err) { alert(err.message); }
     }
 
     async function delUser(id, name, isAdmin) {

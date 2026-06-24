@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { db, genId } from './db.js';
+import { createOrder, verifyNotify, paymentConfigured, MEMBERSHIP_PRICE } from './payment.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const JWT_SECRET = process.env.JWT_SECRET || 'smart-qr-dev-secret-change-me';
@@ -38,6 +39,7 @@ function baseUrl(req) {
 const app = express();
 app.set('trust proxy', 1); // behind a proxy (Vercel/Nginx) — trust X-Forwarded-* headers
 app.use(express.json({ limit: '6mb' }));
+app.use(express.urlencoded({ extended: false })); // 支付回调是 form 表单格式
 app.use(cookieParser());
 
 const FIELD_TYPES = ['text', 'textarea', 'email', 'tel', 'number', 'select', 'radio', 'checkbox', 'date'];
@@ -134,8 +136,17 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', authMiddleware, (req, res) => {
-  res.json({ id: req.user.id, name: req.user.name, email: req.user.email, isAdmin: isAdminEmail(req.user.email) });
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  const u = await db.findUserById(req.user.id);
+  const isAdmin = isAdminEmail(req.user.email);
+  res.json({
+    id: req.user.id,
+    name: req.user.name,
+    email: req.user.email,
+    isAdmin,
+    isPaid: !!(u && u.isPaid),
+    isMember: isAdmin || !!(u && u.isPaid), // 管理员视同会员
+  });
 });
 
 // Account info + all of the user's projects (QR codes and forms)
@@ -164,7 +175,14 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
   }
 
   res.json({
-    user: { name: user.name, email: user.email, createdAt: user.createdAt },
+    user: {
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
+      isPaid: !!user.isPaid,
+      isMember: isAdminEmail(user.email) || !!user.isPaid,
+      paidAt: user.paidAt || null,
+    },
     stats: {
       qrCount: qrcodes.length,
       formCount: forms.length,
@@ -174,6 +192,101 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     qrcodes,
     forms,
   });
+});
+
+// ---------- Billing / Membership API ----------
+// 价格与通道状态，供开通页展示。mode=auto 走虎皮椒扫码，manual 走收款码人工确认
+app.get('/api/billing/config', authMiddleware, async (req, res) => {
+  const u = await db.findUserById(req.user.id);
+  const orders = await db.allOrders();
+  const pending = orders.find((o) => o.userId === req.user.id && o.status === 'requested');
+  res.json({
+    price: MEMBERSHIP_PRICE,
+    mode: paymentConfigured ? 'auto' : 'manual',
+    isPaid: !!(u && u.isPaid),
+    isMember: isAdminEmail(req.user.email) || !!(u && u.isPaid),
+    hasPendingRequest: !!pending,
+  });
+});
+
+// 手动模式：用户扫收款码付款后点「我已支付」，登记一条待确认订单
+app.post('/api/billing/request', authMiddleware, async (req, res) => {
+  const u = await db.findUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  if (isAdminEmail(u.email) || u.isPaid) return res.status(400).json({ error: '你已经是会员了' });
+  const orders = await db.allOrders();
+  const existing = orders.find((o) => o.userId === u.id && o.status === 'requested');
+  if (existing) return res.json({ ok: true, orderId: existing.id, pending: true });
+  const order = {
+    id: genId(20),
+    userId: u.id,
+    amount: MEMBERSHIP_PRICE,
+    status: 'requested', // 等管理员在后台确认
+    createdAt: Date.now(),
+    paidAt: null,
+    transactionId: null,
+  };
+  await db.createOrder(order);
+  res.json({ ok: true, orderId: order.id, pending: true });
+});
+
+// 创建会员订单，返回支付二维码/跳转链接
+app.post('/api/billing/order', authMiddleware, async (req, res) => {
+  const u = await db.findUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: '用户不存在' });
+  if (isAdminEmail(u.email) || u.isPaid) return res.status(400).json({ error: '你已经是会员了' });
+  if (!paymentConfigured) return res.status(503).json({ error: '支付通道尚未配置，请联系管理员手动开通' });
+
+  const orderId = genId(20);
+  const base = baseUrl(req);
+  try {
+    const pay = await createOrder({
+      tradeOrderId: orderId,
+      totalFee: MEMBERSHIP_PRICE,
+      title: '永久会员',
+      notifyUrl: `${base}/api/billing/notify`,
+      returnUrl: `${base}/upgrade.html?paid=1`,
+      callbackUrl: base,
+    });
+    await db.createOrder({
+      id: orderId,
+      userId: u.id,
+      amount: MEMBERSHIP_PRICE,
+      status: 'pending',
+      createdAt: Date.now(),
+      paidAt: null,
+      transactionId: null,
+    });
+    res.json({ orderId, url: pay.url, urlQrcode: pay.urlQrcode });
+  } catch (err) {
+    res.status(502).json({ error: err.message || '下单失败' });
+  }
+});
+
+// 前端轮询订单状态（回调是服务端到服务端，前端只查我们自己的库）
+app.get('/api/billing/order/:id', authMiddleware, async (req, res) => {
+  const o = await db.getOrder(req.params.id);
+  if (!o || o.userId !== req.user.id) return res.status(404).json({ error: '订单不存在' });
+  res.json({ status: o.status });
+});
+
+// 虎皮椒异步回调：验签 → 标记订单已付 + 用户升级为会员。必须返回纯文本 success
+app.post('/api/billing/notify', async (req, res) => {
+  const body = req.body || {};
+  if (!verifyNotify(body)) return res.status(400).send('sign error');
+  const order = await db.getOrder(body.trade_order_id);
+  if (!order) return res.status(404).send('order not found');
+
+  // status === 'OD' 表示支付完成
+  if (body.status === 'OD' && order.status !== 'paid') {
+    await db.updateOrder(order.id, {
+      status: 'paid',
+      paidAt: Date.now(),
+      transactionId: body.transaction_id || null,
+    });
+    await db.updateUser(order.userId, { isPaid: true, paidAt: Date.now() });
+  }
+  res.send('success');
 });
 
 // ---------- Admin API (requires login + admin email) ----------
@@ -189,6 +302,9 @@ app.get('/api/admin/overview', authMiddleware, adminMiddleware, async (req, res)
   const subByForm = {};
   for (const s of submissions) subByForm[s.formId] = (subByForm[s.formId] || 0) + 1;
 
+  const orders = await db.allOrders();
+  const pendingUserIds = new Set(orders.filter((o) => o.status === 'requested').map((o) => o.userId));
+
   const list = users.map((u) => {
     const userQr = qrcodes.filter((q) => q.userId === u.id);
     const userForms = forms.filter((f) => f.userId === u.id);
@@ -198,6 +314,9 @@ app.get('/api/admin/overview', authMiddleware, adminMiddleware, async (req, res)
       email: u.email,
       createdAt: u.createdAt,
       isAdmin: isAdminEmail(u.email),
+      isPaid: !!u.isPaid,
+      paidAt: u.paidAt || null,
+      pendingRequest: pendingUserIds.has(u.id),
       qrCount: userQr.length,
       formCount: userForms.length,
       totalScans: userQr.reduce((s, q) => s + (scanByQr[q.id] || 0), 0),
@@ -244,10 +363,39 @@ app.get('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res
   }
 
   res.json({
-    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt, isAdmin: isAdminEmail(user.email) },
+    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt, isAdmin: isAdminEmail(user.email), isPaid: !!user.isPaid, paidAt: user.paidAt || null },
     qrcodes,
     forms,
   });
+});
+
+// 手动设/取消会员（兜底：支付通道没接好、或线下付款时用）
+app.post('/api/admin/users/:id/membership', authMiddleware, adminMiddleware, async (req, res) => {
+  const user = await db.findUserById(req.params.id);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  const isPaid = !!(req.body && req.body.isPaid);
+  await db.updateUser(user.id, { isPaid, paidAt: isPaid ? (user.paidAt || Date.now()) : null });
+  // 同步把该用户待确认的订单标记为已付（手动开通时对账用）
+  if (isPaid) {
+    const orders = await db.allOrders();
+    for (const o of orders) {
+      if (o.userId === user.id && o.status !== 'paid') {
+        await db.updateOrder(o.id, { status: 'paid', paidAt: o.paidAt || Date.now() });
+      }
+    }
+  }
+  res.json({ ok: true, isPaid });
+});
+
+// 所有订单（对账用）
+app.get('/api/admin/orders', authMiddleware, adminMiddleware, async (req, res) => {
+  const [orders, users] = await Promise.all([db.allOrders(), db.allUsers()]);
+  const byId = Object.fromEntries(users.map((u) => [u.id, u]));
+  res.json(orders.map((o) => ({
+    ...o,
+    userName: byId[o.userId] ? byId[o.userId].name : '(已删除)',
+    userEmail: byId[o.userId] ? byId[o.userId].email : '',
+  })));
 });
 
 // Delete a user and everything they own.
@@ -408,6 +556,11 @@ app.get('/api/forms', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/forms', authMiddleware, async (req, res) => {
+  // 付费闸门：创建表单是会员功能（管理员视同会员）
+  const owner = await db.findUserById(req.user.id);
+  if (!isAdminEmail(req.user.email) && !(owner && owner.isPaid)) {
+    return res.status(402).json({ error: '创建表单是会员功能，请先开通会员', needUpgrade: true });
+  }
   const { title, description, fields } = req.body || {};
   if (!title) return res.status(400).json({ error: '表单标题必填' });
   const clean = sanitizeFields(fields);

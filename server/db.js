@@ -26,6 +26,39 @@ export const db = {
     return user;
   },
 
+  async updateUser(id, patch) {
+    const d = await load();
+    const idx = d.users.findIndex((u) => u.id === id);
+    if (idx === -1) return null;
+    d.users[idx] = { ...d.users[idx], ...patch };
+    await save(d);
+    return d.users[idx];
+  },
+
+  // ---- Orders (membership payments) ----
+  async createOrder(order) {
+    const d = await load();
+    d.orders.push(order);
+    await save(d);
+    return order;
+  },
+  async getOrder(id) {
+    const d = await load();
+    return d.orders.find((o) => o.id === id);
+  },
+  async updateOrder(id, patch) {
+    const d = await load();
+    const idx = d.orders.findIndex((o) => o.id === id);
+    if (idx === -1) return null;
+    d.orders[idx] = { ...d.orders[idx], ...patch };
+    await save(d);
+    return d.orders[idx];
+  },
+  async allOrders() {
+    const d = await load();
+    return [...d.orders].sort((a, b) => b.createdAt - a.createdAt);
+  },
+
   // ---- Admin (whole-dataset views) ----
   async allUsers() {
     const d = await load();
@@ -57,6 +90,7 @@ export const db = {
     d.scans = d.scans.filter((s) => !qrIds.has(s.qrId));
     d.forms = d.forms.filter((f) => f.userId !== userId);
     d.submissions = d.submissions.filter((s) => !formIds.has(s.formId));
+    d.orders = (d.orders || []).filter((o) => o.userId !== userId);
     await save(d);
   },
 
