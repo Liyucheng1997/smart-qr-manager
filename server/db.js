@@ -26,6 +26,40 @@ export const db = {
     return user;
   },
 
+  // ---- Admin (whole-dataset views) ----
+  async allUsers() {
+    const d = await load();
+    return [...d.users].sort((a, b) => b.createdAt - a.createdAt);
+  },
+  async allQrcodes() {
+    const d = await load();
+    return d.qrcodes;
+  },
+  async allForms() {
+    const d = await load();
+    return d.forms;
+  },
+  async allScans() {
+    const d = await load();
+    return d.scans;
+  },
+  async allSubmissions() {
+    const d = await load();
+    return d.submissions;
+  },
+  // Remove a user and everything they own (qrcodes+scans, forms+submissions)
+  async deleteUser(userId) {
+    const d = await load();
+    const qrIds = new Set(d.qrcodes.filter((q) => q.userId === userId).map((q) => q.id));
+    const formIds = new Set(d.forms.filter((f) => f.userId === userId).map((f) => f.id));
+    d.users = d.users.filter((u) => u.id !== userId);
+    d.qrcodes = d.qrcodes.filter((q) => q.userId !== userId);
+    d.scans = d.scans.filter((s) => !qrIds.has(s.qrId));
+    d.forms = d.forms.filter((f) => f.userId !== userId);
+    d.submissions = d.submissions.filter((s) => !formIds.has(s.formId));
+    await save(d);
+  },
+
   // ---- QR codes ----
   async listQrcodes(userId) {
     const d = await load();

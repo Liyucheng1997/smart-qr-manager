@@ -56,6 +56,7 @@ async function renderNav(active) {
       link('/dashboard.html', '二维码', 'dashboard') +
       link('/forms.html', '表单', 'forms') +
       link('/profile.html', '我的信息', 'profile') +
+      (me.isAdmin ? link('/admin.html', '管理后台', 'admin') : '') +
       `<a href="#" id="logoutBtn">退出</a>`;
   } else {
     right = link('/login.html', '登录', 'login');

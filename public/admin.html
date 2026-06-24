@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>管理后台 — Smart QR Manager</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .admin-user { border:1px solid var(--border, #e2e8f0); border-radius:12px; margin-top:12px; overflow:hidden; }
+    .admin-user-head { display:flex; align-items:center; gap:12px; padding:14px 16px; cursor:pointer; }
+    .admin-user-head:hover { background:rgba(99,102,241,.05); }
+    .admin-user-head .who { flex:1; min-width:0; }
+    .admin-user-head .who .nm { font-weight:700; }
+    .admin-user-head .counts { display:flex; gap:14px; font-size:13px; }
+    .admin-user-head .counts b { font-size:15px; }
+    .admin-detail { padding:0 16px 16px; border-top:1px solid var(--border, #e2e8f0); background:rgba(0,0,0,.015); }
+    .admin-detail h4 { margin:16px 0 8px; font-size:14px; }
+    .mini { border:1px solid var(--border,#e2e8f0); border-radius:8px; padding:10px 12px; margin-top:8px; font-size:13px; }
+    .mini .mini-top { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .sub-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:12px; }
+    .sub-table th, .sub-table td { border:1px solid var(--border,#e2e8f0); padding:5px 8px; text-align:left; vertical-align:top; }
+    .sub-table th { background:rgba(99,102,241,.08); }
+    .badge-admin { font-size:11px; background:#6366f1; color:#fff; border-radius:6px; padding:1px 6px; margin-left:6px; }
+    .caret { transition:transform .15s; color:var(--muted,#94a3b8); }
+    .caret.open { transform:rotate(90deg); }
+  </style>
+</head>
+<body>
+  <header class="nav" id="nav"></header>
+
+  <div class="container">
+    <h1 class="page-title">管理后台</h1>
+    <p class="page-sub">所有注册用户及其二维码、表单</p>
+    <div class="msg" id="msg"></div>
+
+    <div id="content" style="display:none">
+      <div class="grid grid-3" style="margin-top:8px">
+        <div class="card"><div class="stat-num" id="tUsers">0</div><div class="stat-label">用户</div></div>
+        <div class="card"><div class="stat-num" id="tQr">0</div><div class="stat-label">二维码 · 扫码 <span id="tScans">0</span> 次</div></div>
+        <div class="card"><div class="stat-num" id="tForms">0</div><div class="stat-label">表单 · 收集 <span id="tSubs">0</span> 份</div></div>
+      </div>
+
+      <div id="userList" style="margin-top:20px"></div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    const THEME_NAMES = { classic: '简约', business: '商务', elegant: '优雅', vibrant: '活力', nature: '自然', dark: '暗夜' };
+    const detailCache = {};
+
+    (async () => {
+      await renderNav('admin');
+      const me = await requireAuth();
+      if (!me) return;
+      const msg = document.getElementById('msg');
+      if (!me.isAdmin) { showMsg(msg, '你没有访问管理后台的权限', 'err'); return; }
+
+      let data;
+      try { data = await api('/api/admin/overview'); }
+      catch (err) { showMsg(msg, err.message, 'err'); return; }
+
+      document.getElementById('content').style.display = '';
+      document.getElementById('tUsers').textContent = data.totals.users;
+      document.getElementById('tQr').textContent = data.totals.qrcodes;
+      document.getElementById('tScans').textContent = data.totals.scans;
+      document.getElementById('tForms').textContent = data.totals.forms;
+      document.getElementById('tSubs').textContent = data.totals.submissions;
+
+      renderUsers(data.users);
+    })();
+
+    function renderUsers(users) {
+      const wrap = document.getElementById('userList');
+      if (!users.length) { wrap.innerHTML = '<div class="card empty">还没有注册用户</div>'; return; }
+      wrap.innerHTML = users.map((u) => `
+        <div class="admin-user" data-id="${u.id}">
+          <div class="admin-user-head" onclick="toggleUser('${u.id}')">
+            <span class="caret" id="caret-${u.id}">▶</span>
+            <div class="who">
+              <div class="nm">${escapeHtml(u.name)}${u.isAdmin ? '<span class="badge-admin">管理员</span>' : ''}</div>
+              <div class="muted" style="font-size:12px">${escapeHtml(u.email)} · 注册于 ${fmtDate(u.createdAt)}</div>
+            </div>
+            <div class="counts">
+              <span>二维码 <b>${u.qrCount}</b></span>
+              <span>扫码 <b>${u.totalScans}</b></span>
+              <span>表单 <b>${u.formCount}</b></span>
+              <span>收集 <b>${u.totalSubmissions}</b></span>
+            </div>
+            <button class="btn ghost sm" onclick="event.stopPropagation();delUser('${u.id}','${escapeHtml(u.name).replace(/'/g, "\\'")}',${u.isAdmin})">删除</button>
+          </div>
+          <div class="admin-detail" id="detail-${u.id}" style="display:none"></div>
+        </div>`).join('');
+    }
+
+    async function toggleUser(id) {
+      const box = document.getElementById('detail-' + id);
+      const caret = document.getElementById('caret-' + id);
+      const open = box.style.display !== 'none';
+      if (open) { box.style.display = 'none'; caret.classList.remove('open'); return; }
+      box.style.display = '';
+      caret.classList.add('open');
+      if (!detailCache[id]) {
+        box.innerHTML = '<div class="muted" style="padding:12px 0">加载中…</div>';
+        try { detailCache[id] = await api('/api/admin/users/' + id); }
+        catch (err) { box.innerHTML = `<div class="msg show err">${escapeHtml(err.message)}</div>`; return; }
+      }
+      renderDetail(id, detailCache[id]);
+    }
+
+    function renderDetail(id, d) {
+      const box = document.getElementById('detail-' + id);
+      const qrHtml = d.qrcodes.length ? d.qrcodes.map((q) => `
+        <div class="mini">
+          <div class="mini-top">
+            <div style="min-width:0">
+              <div style="font-weight:600">${escapeHtml(q.title)}</div>
+              <div class="muted" style="word-break:break-all">→ ${escapeHtml(q.target)}</div>
+              <div class="muted">扫码 <b>${q.scanCount}</b> 次 · ${fmtDate(q.createdAt)}</div>
+            </div>
+            <button class="btn ghost sm" onclick="delQr('${id}','${q.id}')">删除</button>
+          </div>
+        </div>`).join('') : '<div class="muted">无</div>';
+
+      const formHtml = d.forms.length ? d.forms.map((f) => `
+        <div class="mini">
+          <div class="mini-top">
+            <div style="min-width:0">
+              <div style="font-weight:600">${escapeHtml(f.title)} <span class="tag">${THEME_NAMES[f.theme] || f.theme}</span></div>
+              <div class="muted">${f.fields.length} 字段 · 收集 <b>${f.submissionCount}</b> 份 · ${fmtDate(f.createdAt)}</div>
+            </div>
+            <button class="btn ghost sm" onclick="delForm('${id}','${f.id}')">删除</button>
+          </div>
+          ${renderSubs(f)}
+        </div>`).join('') : '<div class="muted">无</div>';
+
+      box.innerHTML = `<h4>二维码 (${d.qrcodes.length})</h4>${qrHtml}<h4>表单 (${d.forms.length})</h4>${formHtml}`;
+    }
+
+    function renderSubs(f) {
+      if (!f.submissions.length) return '';
+      const cols = f.fields;
+      const head = '<th>提交时间</th>' + cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('');
+      const rows = f.submissions.map((s) => {
+        const cells = cols.map((c) => {
+          let v = s.data[c.id];
+          if (Array.isArray(v)) v = v.join(' / ');
+          return `<td>${escapeHtml(v == null ? '' : v)}</td>`;
+        }).join('');
+        return `<tr><td>${fmtDate(s.at)}</td>${cells}</tr>`;
+      }).join('');
+      return `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:var(--muted,#94a3b8)">展开 ${f.submissions.length} 条提交</summary>
+        <table class="sub-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></details>`;
+    }
+
+    async function delUser(id, name, isAdmin) {
+      if (isAdmin) { alert('不能删除管理员账号'); return; }
+      if (!confirm(`确定删除用户「${name}」及其全部二维码和表单？此操作不可恢复。`)) return;
+      try { await api('/api/admin/users/' + id, { method: 'DELETE' }); reload(); }
+      catch (err) { alert(err.message); }
+    }
+    async function delQr(uid, qid) {
+      if (!confirm('确定删除该二维码？扫码记录将一并删除，不可恢复。')) return;
+      try { await api('/api/admin/qrcodes/' + qid, { method: 'DELETE' }); delete detailCache[uid]; reload(); }
+      catch (err) { alert(err.message); }
+    }
+    async function delForm(uid, fid) {
+      if (!confirm('确定删除该表单？收集到的数据将一并删除，不可恢复。')) return;
+      try { await api('/api/admin/forms/' + fid, { method: 'DELETE' }); delete detailCache[uid]; reload(); }
+      catch (err) { alert(err.message); }
+    }
+    function reload() { location.reload(); }
+  </script>
+</body>
+</html>

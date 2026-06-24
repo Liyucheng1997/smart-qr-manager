@@ -18,6 +18,15 @@ if (isProd && JWT_SECRET === 'smart-qr-dev-secret-change-me') {
 // Cookie options — secure flag enabled in production (served over HTTPS)
 const COOKIE_OPTS = { httpOnly: true, sameSite: 'lax', secure: isProd, maxAge: 7 * 24 * 60 * 60 * 1000 };
 
+// Admin emails — comma-separated list in the ADMIN_EMAILS env var.
+const ADMIN_EMAILS = new Set(
+  String(process.env.ADMIN_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+const isAdminEmail = (email) => ADMIN_EMAILS.has(String(email || '').toLowerCase());
+
 // Public base URL. Prefer an explicit override; otherwise derive from the
 // incoming request so QR codes always point at whatever domain was used
 // (works automatically on Vercel preview/production and custom domains).
@@ -77,6 +86,13 @@ function authMiddleware(req, res, next) {
   }
 }
 
+// Requires a valid login AND an admin email. Run after authMiddleware.
+function adminMiddleware(req, res, next) {
+  if (!isAdminEmail(req.user && req.user.email))
+    return res.status(403).json({ error: '无权限' });
+  next();
+}
+
 function detectDevice(ua = '') {
   const s = ua.toLowerCase();
   if (/tablet|ipad|playbook|silk/.test(s) || (/android/.test(s) && !/mobile/.test(s)))
@@ -119,7 +135,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
-  res.json({ id: req.user.id, name: req.user.name, email: req.user.email });
+  res.json({ id: req.user.id, name: req.user.name, email: req.user.email, isAdmin: isAdminEmail(req.user.email) });
 });
 
 // Account info + all of the user's projects (QR codes and forms)
@@ -158,6 +174,104 @@ app.get('/api/profile', authMiddleware, async (req, res) => {
     qrcodes,
     forms,
   });
+});
+
+// ---------- Admin API (requires login + admin email) ----------
+// Overview: every user with aggregated counts.
+app.get('/api/admin/overview', authMiddleware, adminMiddleware, async (req, res) => {
+  const [users, qrcodes, forms, scans, submissions] = await Promise.all([
+    db.allUsers(), db.allQrcodes(), db.allForms(), db.allScans(), db.allSubmissions(),
+  ]);
+
+  // Pre-index scans by qrId and submissions by formId for O(1) lookups
+  const scanByQr = {};
+  for (const s of scans) scanByQr[s.qrId] = (scanByQr[s.qrId] || 0) + 1;
+  const subByForm = {};
+  for (const s of submissions) subByForm[s.formId] = (subByForm[s.formId] || 0) + 1;
+
+  const list = users.map((u) => {
+    const userQr = qrcodes.filter((q) => q.userId === u.id);
+    const userForms = forms.filter((f) => f.userId === u.id);
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      createdAt: u.createdAt,
+      isAdmin: isAdminEmail(u.email),
+      qrCount: userQr.length,
+      formCount: userForms.length,
+      totalScans: userQr.reduce((s, q) => s + (scanByQr[q.id] || 0), 0),
+      totalSubmissions: userForms.reduce((s, f) => s + (subByForm[f.id] || 0), 0),
+    };
+  });
+
+  res.json({
+    totals: {
+      users: users.length,
+      qrcodes: qrcodes.length,
+      forms: forms.length,
+      scans: scans.length,
+      submissions: submissions.length,
+    },
+    users: list,
+  });
+});
+
+// Drill-down: one user's full detail — every QR code and form with content.
+app.get('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const user = await db.findUserById(req.params.id);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+
+  const qrRecords = await db.listQrcodes(user.id);
+  const qrcodes = [];
+  for (const q of qrRecords) {
+    const scans = await db.scansFor(q.id);
+    qrcodes.push({
+      id: q.id, title: q.title, target: q.target, createdAt: q.createdAt,
+      scanCount: scans.length, redirectUrl: `${baseUrl(req)}/r/${q.id}`,
+    });
+  }
+
+  const formRecords = await db.listForms(user.id);
+  const forms = [];
+  for (const f of formRecords) {
+    const submissions = await db.submissionsFor(f.id);
+    forms.push({
+      id: f.id, title: f.title, description: f.description, theme: cleanTheme(f.theme),
+      fields: f.fields || [], createdAt: f.createdAt, formUrl: `${baseUrl(req)}/f/${f.id}`,
+      submissionCount: submissions.length, submissions,
+    });
+  }
+
+  res.json({
+    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt, isAdmin: isAdminEmail(user.email) },
+    qrcodes,
+    forms,
+  });
+});
+
+// Delete a user and everything they own.
+app.delete('/api/admin/users/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const user = await db.findUserById(req.params.id);
+  if (!user) return res.status(404).json({ error: '用户不存在' });
+  if (user.id === req.user.id) return res.status(400).json({ error: '不能删除自己的账号' });
+  await db.deleteUser(user.id);
+  res.json({ ok: true });
+});
+
+// Delete any QR code / form (admin override of the per-owner endpoints).
+app.delete('/api/admin/qrcodes/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const qr = await db.getQrcode(req.params.id);
+  if (!qr) return res.status(404).json({ error: '未找到' });
+  await db.deleteQrcode(qr.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/forms/:id', authMiddleware, adminMiddleware, async (req, res) => {
+  const f = await db.getForm(req.params.id);
+  if (!f) return res.status(404).json({ error: '未找到' });
+  await db.deleteForm(f.id);
+  res.json({ ok: true });
 });
 
 // ---------- QR code API ----------

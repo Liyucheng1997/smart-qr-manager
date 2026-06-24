@@ -1,6 +1,6 @@
 {
   "name": "smart-qr-manager",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "Smart QR Manager - generate QR codes, track scans, view statistics",
   "type": "module",
   "main": "server/index.js",
